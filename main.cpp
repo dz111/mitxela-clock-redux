@@ -1,5 +1,3 @@
-#define F_CPU 20e6  // 20 MHz
-
 #include <avr/cpufunc.h>
 #include <avr/interrupt.h>
 #include <avr/io.h>

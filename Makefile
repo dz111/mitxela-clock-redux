@@ -1,7 +1,7 @@
 PROG  = clock
 MCU   = attiny3226
 BUILD = build
-F_CPU = 20E6UL
+F_CPU = 20E6
 PORT ?= COM1
 LANG  = c++20
 BAUD  = 115200
@@ -12,7 +12,7 @@ OBJCOPY = avr-objcopy
 SIZE    = avr-size
 AVRDUDE = avrdude
 
-CFLAGS = -std=$(LANG) -Wall -O2 -mmcu=$(MCU) \
+CFLAGS = -std=$(LANG) -Wall -O2 -mmcu=$(MCU) -DF_CPU=$(F_CPU)\
          -fno-exceptions -fno-rtti -fno-threadsafe-statics -MMD -MP -I.
 
 .PHONY: main flash size clean test
