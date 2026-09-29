@@ -7,7 +7,7 @@
 
 #include "ring_buffer.h"
 
-volatile class _Spi {
+class _Spi {
 private:
   struct message {
     uint8_t payload0;
@@ -15,52 +15,54 @@ private:
     uint8_t load_mask;  // These pins are blipped high after payload is transmitted
   };
 
-  inline ring_buffer<message, 16> m_rb;
+  ring_buffer<message, 16> m_rb;
   message m_curr_msg = {0};
+  uint8_t curr_mask;
 
+/*
   void write(message msg) {
     while (m_rb.full()) { }  // Block while buffer full
     if (m_rb.empty()) {
       m_curr_msg = msg;
       next
+*/
+  enum class _state {
+    idle,
+    payload0,
+    payload1,
+    blip,
+  } m_state;
 
-  //enum class _state {
-  //  idle,
-  //  payload0,
-  //  payload1,
-  //  blip,
-  //} m_state;
+  void _do_write(message msg) {
+    curr_mask = msg.load_mask;
+    SPI0.DATA = msg.payload0;
+  }
 
-  //void _do_write(message msg) {
-  //  curr_mask = msg.load_mask;
-  //  SPI0.DATA = msg.payload;
-  //}
+  void write(message msg) {
+    while (m_rb.full()) { }  // Blocks while buffer full
+    if (m_rb.empty()) {
+      _do_write(msg);
+    } else {
+      m_rb.push(msg);
+    }
+  }
 
-  //void write(message msg) {
-  //  while (m_rb.full()) { }  // Blocks while buffer full
-  //  if (m_rb.empty()) {
-  //    _do_write(msg);
-  //  } else {
-  //    m_rb.push(msg);
-  //  }
-  //}
+  void write_next() {
+    if (!m_rb.empty()) {
+      message msg;
+      m_rb.pop(&msg);
+      _do_write(msg);
+    }
+  }
 
-  //void write_next() {
-  //  if (!m_rb.empty()) {
-  //    message msg;
-  //    m_rb.pop(msg);
-  //    _do_write(msg);
-  //  }
-  //}
-
-  //void blip() {
-  //  PORTA.OUTSET = curr_mask;
-  //  _NOP();
-  //  _NOP();
-  //  PORTA.OUTCLR = curr_mask;
-  //  _NOP();
-  //  _NOP();
-  //}
+  void blip() {
+    PORTA.OUTSET = curr_mask;
+    _NOP();
+    _NOP();
+    PORTA.OUTCLR = curr_mask;
+    _NOP();
+    _NOP();
+  }
 public:
   void initialise();
 
@@ -72,13 +74,15 @@ public:
     switch (m_state) {
     case _state::idle: return;
     case _state::payload0:
-      SPI0.DATA =
+      SPI0.DATA = 0;
+      break;
+    default: break;
     }
   }
 } Spi;
 
 ISR(SPI0_INT_vect) {
-  Spi::next();
+  Spi.next();
   SPI0.INTFLAGS &= (7 << 1); // Clear interrupt
 }
 

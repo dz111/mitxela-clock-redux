@@ -25,37 +25,6 @@ struct test_case {
 #define AVR_CASE(name) { #name, test_##name }
 
 /*
-
-#define AVR_TEST(name) \
-  static void name();                                 \
-  [[gnu::used]]                                        \
-  static ::avr_test::test_case name##_test_case = {   \
-    #name,                                             \
-    name,                                              \
-    nullptr                                            \
-  };                                                   \
-  [[gnu::used]] static ::avr_test::test_registration   \
-    name##_registration(name##_test_case);             \
-  static void name()
-
-inline test_case* first_test = nullptr;
-inline test_case* last_test = nullptr;
-
-class test_registration {
-public:
-  explicit test_registration(test_case& test) {
-    if (last_test) {
-      last_test->next = &test;
-    } else {
-      first_test = &test;
-    }
-    last_test = &test;
-  }
-};
-
-*/
-
-/*
  * UPDI UART functions
  */
 #define UPDI_UART_ENABLE   0x01
@@ -152,16 +121,14 @@ inline void assertion_failed(const char* expression) {
 
 #define TEST_ASSERT_EQ(a, b)          \
   do {                                \
-    auto _test_a = (a);               \
-    auto _test_b = (b);               \
-    TEST_ASSERT(_test_a == _test_b);  \
+    TEST_ASSERT((a) == (b));  \
   } while (0)
 
 #define TEST_ASSERT_NE(a, b)          \
   do {                                \
     auto _test_a = (a);               \
     auto _test_b = (b);               \
-    TEST_ASSERT(_test_a != _test_b);  \
+    TEST_ASSERT((a) != (b));  \
   } while (0)
 
 
