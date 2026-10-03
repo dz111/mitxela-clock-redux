@@ -4,7 +4,7 @@ BUILD = build
 F_CPU = 20E6
 PORT ?= COM1
 LANG  = c++20
-BAUD  = 115200
+BAUD ?= 230400
 PGMR  = serialupdi
 
 CC      = avr-gcc
@@ -12,10 +12,10 @@ OBJCOPY = avr-objcopy
 SIZE    = avr-size
 AVRDUDE = avrdude
 
-CFLAGS = -std=$(LANG) -Wall -O2 -mmcu=$(MCU) -DF_CPU=$(F_CPU)\
+CFLAGS = -std=$(LANG) -Wall -Os -mmcu=$(MCU) -DF_CPU=$(F_CPU)\
          -fno-exceptions -fno-rtti -fno-threadsafe-statics -MMD -MP -I.
 
-.PHONY: main flash size clean test
+.PHONY: main flash size clean test reset
 
 main: $(BUILD)/$(PROG).hex size
 
@@ -57,3 +57,5 @@ $(BUILD)/%.elf: $(TEST_DIR)/%.cpp
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $< -o $@
 
+reset:
+	$(AVRDUDE) -p $(MCU) -c $(PGMR) -P $(PORT) -n
