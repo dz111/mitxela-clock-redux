@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <avr/cpufunc.h>
 #include <avr/io.h>
+#include <avr/wdt.h>
 #include <util/delay.h>
 
 volatile uint8_t seconds = 0;
@@ -169,6 +170,8 @@ int main() {
   cli();
   _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0);
 
+  wdt_enable(WDTO_250MS);
+
   Spi.initialise();
   clock_initialise();
 
@@ -181,5 +184,7 @@ int main() {
   clear_display();
   render();
 
-  while (1);
+  while (1) {
+    wdt_reset();
+  }
 }
