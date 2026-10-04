@@ -11,13 +11,10 @@
 #include <avr/io.h>
 #include <util/delay.h>
 
-volatile bool course = false;
 volatile uint8_t seconds = 0;
 volatile uint8_t centiseconds = 0;
 volatile uint16_t period = 50000;
-volatile int16_t phase_cs = 0;
-volatile int16_t phase_cs_ema = 0;
-volatile int8_t phase_s = 0;
+volatile int32_t phase = 0;
 
 void init_display() {
   Spi.write(0x09, 0xFF, LD_DATE | LD_TIME);  // Set decode mode
@@ -47,31 +44,34 @@ void render() {
   Spi.write(0x06, 0x0D, LD_DATE);
   Spi.write(0x05, 0x0E, LD_DATE);
 #else
-  //auto m = period / 10;
-  auto m = phase_cs / 10;
-  //auto m = phase_cs_ema / 10;
-  uint16_t k = static_cast<uint16_t>(abs(m));
-  for (uint8_t i = 0; i < 4; ++i) {
-    uint8_t v = k % 10;
-    if (i == 0 && m < 0) v |= 0x80;
-    Spi.write(0x05 + i, v, LD_DATE);
-    k /= 10;
-  }
+  int8_t cs = abs(phase) / period;
+  int16_t tick = (abs(phase) % period) / 10;
 
-  auto g = static_cast<uint8_t>(abs(phase_s));
-  for (uint8_t i = 0; i < 2; ++i) {
-    uint8_t v = g % 10;
-    if (i == 0 && phase_s < 0) v |= 0x80;
-    Spi.write(0x03 + i, v, LD_DATE);
-    g /= 10;
-  }
-
-  if (course) {
-    Spi.write(0x01, 0x8F, LD_DATE);
+  if (cs > 1) {
+    for (uint8_t i = 0; i < 2; ++i) {
+      uint8_t v = cs % 10;
+      if (i == 0 && phase < 0) v |= 0x80;
+      Spi.write(0x05 + i, v, LD_DATE);
+      cs /= 10;
+    }
+    Spi.write(0x07, 0x0F, LD_DATE);
+    Spi.write(0x08, 0x0F, LD_DATE);
   } else {
-    Spi.write(0x01, 0x0F, LD_DATE);
+    for (uint8_t i = 0; i < 4; ++i) {
+      uint8_t v = tick % 10;
+      if (i == 0 && phase < 0) v |= 0x80;
+      Spi.write(0x05 + i, v, LD_DATE);
+      tick /= 10;
+    }
   }
 #endif
+
+  uint16_t per = period / 10;
+  for (uint8_t i = 0; i < 4; ++i) {
+    uint8_t v = per % 10;
+    Spi.write(0x05 + i, v, LD_TIME);
+    per /= 10;
+  }
 
   if (centiseconds > 99) {
     Spi.write(0x01, 0x0E, LD_TIME);
@@ -90,60 +90,14 @@ void render() {
   }
 }
 
-void blink() {
-  PORTA.OUTTGL = 0b1000'0000;
-}
-
-uint16_t next_per() {
-#if 1
-  constexpr uint16_t divider_cs = 512;
-  constexpr uint16_t gain_s = 256;
-  constexpr uint16_t gain_1s = 64;
-  int16_t pce = phase_cs_ema;
-  if (phase_s > 1) {
-    course = true;
-    return period + static_cast<uint16_t>(phase_s) * gain_s;
-  } else if (phase_s < -1) {
-    course = true;
-    return period - static_cast<uint16_t>(-phase_s) * gain_s;
-  } else if (phase_s == 1) {
-    if (pce < 10000) {
-      pce += period;
-    } else {
-      course = true;
-      return period + gain_1s;
-    }
-  } else if (phase_s == -1) {
-    if (pce > -10000) {
-      pce -= period;
-    } else {
-      course = true;
-      return period - gain_1s;
-    }
-  }
-
-  if (phase_cs_ema > 0) {
-    course = false;
-    return period + static_cast<uint16_t>(pce) / divider_cs;
-  } else {
-    course = false;
-    return period - static_cast<uint16_t>(-pce) / divider_cs;
-  }
-#else
-  return period;
-#endif
-}
-
 ISR(TCA0_OVF_vect) {
   centiseconds = centiseconds + 1;
-  if (centiseconds > 99) {
+  if (centiseconds > 99) [[unlikely]] {
     centiseconds = 0;
-#if 1
     seconds = seconds + 1;
-    if (seconds > 99) {
+    if (seconds > 99) [[unlikely]] {
       seconds = 0;
     }
-#endif
   }
   render();
 
@@ -153,51 +107,36 @@ ISR(TCA0_OVF_vect) {
 ISR(TCB1_INT_vect) {
   uint16_t count = TCA0.SINGLE.CNT;
   static bool discard = false;
-  if (TCB1.INTFLAGS & TCB_OVF_bm) {
+  if (TCB1.INTFLAGS & TCB_OVF_bm) [[unlikely]] {
     TCB1.INTFLAGS = TCB_OVF_bm;
     discard = true;
     return;
   }
-  if (discard) {
+  if (discard) [[unlikely]] {
     TCB1.INTFLAGS = TCB_CAPT_bm;
     discard = false;
     return;
   }
   uint32_t value = ((uint32_t)TCB1.CCMP << 16) | TCB0.CCMP;
   value /= 100;  // Divide PPS by 100 to obtain centiseconds
-  if (value > 45000 && value < 55000) {
-    if (value > period) {
-      period = period + (((uint16_t)value - period) >> 2);
-    } else {
-      period = period - ((period - (uint16_t)value) >> 2);
-    }
-    int16_t phase;
-    while (count > period) count -= period;
-    if (count < period / 2) {
-      phase = static_cast<int16_t>(count);
-    } else {
-      phase = static_cast<int16_t>(count - period);
-    }
-    phase_cs = phase;
-    phase_cs_ema = phase_cs_ema + ((phase - phase_cs_ema) >> 5);
-    uint8_t cs = centiseconds;
-    if (phase_cs < 0) cs += 1;
-    if (cs > 99) cs -= 100;
-    if (cs < 50) {
-      phase_s = static_cast<int8_t>(centiseconds);
-    } else {
-      phase_s = static_cast<int8_t>(centiseconds - 100);
-    }
-    TCA0.SINGLE.PERBUF = next_per() - 1;
+  if (value < 45000 || value > 55000) return;
+
+  if (value > period) {
+    period = period + (((uint16_t)value - period) >> 2);
+  } else {
+    period = period - ((period - (uint16_t)value) >> 2);
   }
+
+  int32_t cs = centiseconds;
+  if (cs > 50) cs -= 100;
+  if (count > (period / 2)) count -= period;
+  int32_t new_phase = cs * (int32_t)period + count;
+  constexpr uint16_t divider = 256;
+  phase = new_phase;
+  TCA0.SINGLE.PERBUF = period + phase / divider;
 }
 
-int main() {
-  cli();
-  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0);
-
-  Spi.initialise();
-
+void clock_initialise() {
   TCA0.SINGLE.PER = period;
   TCA0.SINGLE.CTRLA = TCA_SINGLE_CLKSEL_DIV4_gc;
   TCA0.SINGLE.CTRLB = TCA_SINGLE_WGMODE_NORMAL_gc;
@@ -224,6 +163,14 @@ int main() {
 
   TCB0.CTRLA |= TCB_ENABLE_bm;
   TCB1.CTRLA |= TCB_ENABLE_bm;
+}
+
+int main() {
+  cli();
+  _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0);
+
+  Spi.initialise();
+  clock_initialise();
 
   sei();
 
