@@ -3,8 +3,10 @@
 #define LD_DATE _BV(5)  // Pin 3  (PA5)
 #define LD_TIME _BV(6)  // Pin 4  (PA6)
 #define PPS     _BV(5)  // Pin 6  (PB5)
+#define RXD     _BV(3)  // Pin 8  (PB3)
 
 #include "spi.h"
+#include "uart.h"
 
 #include <stdint.h>
 #include <avr/cpufunc.h>
@@ -135,6 +137,7 @@ ISR(TCB1_INT_vect) {
   constexpr uint16_t divider = 256;
   phase = new_phase;
   TCA0.SINGLE.PERBUF = period + phase / divider;
+//  Uart.buffer.push('a');
 }
 
 void clock_initialise() {
@@ -166,25 +169,53 @@ void clock_initialise() {
   TCB1.CTRLA |= TCB_ENABLE_bm;
 }
 
+#define UPDI_UART_ENABLE   0x01
+#define UPDI_UART_RX_READY 0x02
+
+#define SYSCFG_OCDM  _SFR_MEM8(0x0F18)
+#define SYSCFG_OCDMS _SFR_MEM8(0x0F19)
+
+class _Debug {
+public:
+  inline bool updi_uart_enabled() {
+    return GPIOR2 & UPDI_UART_ENABLE;
+  }
+
+  void write(uint8_t c) {
+    if (!updi_uart_enabled()) return;
+    while (SYSCFG_OCDMS) { }
+    SYSCFG_OCDM = c;
+  }
+} Debug;
+
 int main() {
   cli();
   _PROTECTED_WRITE(CLKCTRL.MCLKCTRLB, 0);
 
-  wdt_enable(WDTO_250MS);
+//  wdt_enable(WDTO_250MS);
 
   Spi.initialise();
+  Uart.initialise();
   clock_initialise();
-
-  sei();
 
   PORTA.DIRSET = LD_DATE | LD_TIME;
   PORTA.OUTCLR = LD_DATE | LD_TIME;
+
+  PORTA.DIRSET = PIN7_bm;
+
+  sei();
 
   init_display();
   clear_display();
   render();
 
   while (1) {
-    wdt_reset();
+    //wdt_reset();
+    while (!Uart.buffer.empty()) {
+      uint8_t c;
+      Uart.buffer.pop(&c);
+      Debug.write(c);
+      if (c == '\r') Debug.write('\n');
+    }
   }
 }
