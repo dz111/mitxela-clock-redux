@@ -14,7 +14,7 @@ private:
   };
 
   ring_buffer<message, 16> m_rb;
-  message m_curr_msg = {0};
+  message m_curr_msg = {};
 
   volatile enum class state {
     idle,

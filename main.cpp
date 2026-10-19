@@ -6,6 +6,7 @@
 #define RXD     _BV(3)  // Pin 8  (PB3)
 
 #include "spi.h"
+#include "parser.h"
 #include "uart.h"
 
 #include <stdint.h>

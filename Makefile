@@ -12,12 +12,13 @@ OBJCOPY = avr-objcopy
 SIZE    = avr-size
 AVRDUDE = avrdude
 
-CFLAGS = -std=$(LANG) -Wall -Os -mmcu=$(MCU) -DF_CPU=$(F_CPU)\
+CFLAGS = -std=$(LANG) -Os -mmcu=$(MCU) -DF_CPU=$(F_CPU)\
+         -Wall -Wextra -Wpedantic \
          -fno-exceptions -fno-rtti -fno-threadsafe-statics -MMD -MP -I.
 
 .PHONY: main flash size clean test reset
 
-main: $(BUILD)/$(PROG).hex size
+main: $(BUILD)/time_offset.h $(BUILD)/$(PROG).hex size
 
 $(BUILD)/$(PROG).elf: main.cpp
 	@mkdir -p $(dir $@)
@@ -38,6 +39,9 @@ clean:
 
 -include $(BUILD)/$(PROG).d
 
+$(BUILD)/time_offset.h: time_offset.py
+	./time_offset.py
+
 TEST_DIR = tests
 TEST_SOURCES = $(wildcard $(TEST_DIR)/test_*.cpp)
 TEST_NAMES = $(basename $(notdir $(TEST_SOURCES)))
@@ -46,16 +50,26 @@ test:
 	@echo "Available tests:"
 	@$(foreach test,$(TEST_NAMES),echo " - $(test)";)
 	@echo "\nRun 'make flash_test_name' to flash a test."
+	@echo "\nRun 'make test_test_name' to run a test locally."
 
 flash_%: $(BUILD)/%.hex
 	$(AVRDUDE) -p $(MCU) -c $(PGMR) -P $(PORT) -b $(BAUD) -U flash:w:$<:i
+	rm $<
+
+test_%: $(BUILD)/%
+	$<
+	rm $<
 
 $(BUILD)/%.hex: $(BUILD)/%.elf
 	$(OBJCOPY) -O ihex -R .eeprom $< $@
 
 $(BUILD)/%.elf: $(TEST_DIR)/%.cpp
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $< -o $@
+	$(CC) -Wall -Wextra -Werror -Wpedantic -pedantic-errors $(CFLAGS) $< -o $@
+
+$(BUILD)/%: $(TEST_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	gcc -std=$(LANG) -Wall -Wextra -Werror -Wpedantic -pedantic-errors -I. $< -o $@
 
 reset:
 	$(AVRDUDE) -p $(MCU) -c $(PGMR) -P $(PORT) -n
