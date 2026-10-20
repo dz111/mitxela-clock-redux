@@ -1,5 +1,10 @@
 #pragma once
 
+#if __AVR
+#include <avr/pgmspace.h>
+#endif
+
+#include <stddef.h>
 #include <stdint.h>
 
 // Add days up to the first day of the present month
@@ -31,29 +36,44 @@ struct TzOffset {
 #include "build/time_offset.h"
 #endif  // TIME_OFFSET_OVERRIDE_TABLE
 
+#if __AVR
+inline TzOffset time_offset(const TzOffset* table, uint8_t offset) {
+  uint8_t* eff_address = (uint8_t*)(table + offset);
+  TzOffset retval;
+  retval.start = pgm_read_dword(eff_address);
+  retval.offset = (int16_t)pgm_read_word(eff_address + offsetof(TzOffset, offset));
+  retval.dst = (bool)pgm_read_byte(eff_address + offsetof(TzOffset, dst));
+  return retval;
+}
+#else
+inline TzOffset time_offset(const TzOffset* table, uint8_t offset) {
+  return table[offset];
+}
+#endif
+
 #if 0
 TzOffset time_offset_lookup(uint32_t seconds,
                             const TzOffset* table, uint8_t len) {
   for (uint8_t i = 1; i < len; ++i) {
-    if (seconds < table[i].start) {
-      return table[i - 1];
+    if (seconds < time_offset(table, i).start) {
+      return time_offset(table, i - 1);
     }
   }
-  return table[len - 1];
+  return time_offset(table, len - 1);
 }
 #else
 TzOffset time_offset_lookup(uint32_t seconds,
                             const TzOffset* table, uint8_t len) {
   static uint8_t i = 1;
-  if (seconds < table[i - 1].start) {
+  if (seconds < time_offset(table, i - 1).start) {
     i = 1;
   }
   for (; i < len; ++i) {
-    if (seconds < table[i].start) {
-      return table[i - 1];
+    if (seconds < time_offset(table, i).start) {
+      return time_offset(table, i - 1);
     }
   }
-  return table[len - 1];
+  return time_offset(table, len - 1);
 }
 #endif
 
